@@ -1,1 +1,296 @@
+# Instalacja pakietów
+install.packages(c("dplyr", "caret", "lubridate"))
+install.packages("DMwR2")  
+install.packages("ROSE")
+install.packages("tibble") 
+install.packages("rpart")
+
+# Załadowanie bibliotek
+library(dplyr)
+library(caret)
+library(lubridate)
+library(caret)
+library(ggplot2) 
+library(DMwR2)   
+library(ROSE)  
+library(tibble) 
+library(rpart)
+
+
+# Wczytanie danych
+file_path <- file.choose()  
+data <- Fill_rate_dashboard_2
+
+# Etap 1: Obliczenie Fill Rate i dodanie zmiennej "Kompletność"
+# Dodanie zmiennych 'fill_rate' oraz 'completeness'
+data <- data %>%
+  mutate(
+    fill_rate = (Weight / Weight_Capacity) * 100,  # Obliczamy fill_rate
+    completeness = ifelse(fill_rate >= 80, 1, 0)  # Klasyfikujemy zamówienia
+  )
+
+# Dodawanie dnia tygodnia na podstawie planned departure date
+data <- data %>%
+  mutate(day_of_week = weekdays(as.Date(`Planned Departure Date`)))
+
+# Dodawanie pory roku na podstawie miesiąca 
+data <- data %>%
+  mutate(
+    season = case_when(
+      month(as.Date(`Planned Departure Date`)) %in% c(12, 1, 2) ~ "Winter",
+      month(as.Date(`Planned Departure Date`)) %in% c(3, 4, 5) ~ "Spring",
+      month(as.Date(`Planned Departure Date`)) %in% c(6, 7, 8) ~ "Summer",
+      month(as.Date(`Planned Departure Date`)) %in% c(9, 10, 11) ~ "Autumn",
+      TRUE ~ "Unknown"  # Wartość domyślna, jeśli data jest nieprawidłowa
+    )
+  )
+
+
+
+#Sprawdzanie czy w danych występują braki
+#Liczba braków w danych
+sum(is.na(data))  
+
+# Ta linijka powinna być uruchomiona, jesli wystepują braki danych - Sprawdzenie braków dla każdej kolumny
+colSums(is.na(data))
+
+# Wystepuje 14 braków danych. Z racji tego, że nie jest to duża ilość, usówamy je:
+data <- na.omit(data)
+
+# Sprawdźmy kompletność danych po usunięciu:
+sum(is.na(data))  # Sprawdzenie, czy wciąż są braki
+
+
+### Eksploracja danych
+
+# Rozkład fill_rate
+hist(data$fill_rate, breaks = 30, main = "Rozkład Fill Rate", xlab = "Fill Rate (%)")
+
+# Rozkład kompletności
+table(data$completeness) %>%
+  barplot(main = "Rozkład kompletności zamówień", xlab = "Kompletność (0 = Nie, 1 = Tak)")
+
+### Moodelowanie
+
+# 2. Ustalamy losowość
+set.seed(123)  
+trainIndex <- createDataPartition(data$completeness, p = 0.8, list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+
+
+###############       Wybór modelu     ################
+
+# Model: Regresja logistyczna
+
+# Trenowanie modelu
+logistic_model <- glm(completeness ~ Week + day_of_week + `Source Country` + 
+                        `Destination Country` + season, 
+                      data = trainData, 
+                      family = "binomial")
+
+# Podsumowanie modelu
+summary(logistic_model)
+
+# Model : Drzewo decyzyjne
+library(rpart)
+tree_model <- rpart(completeness ~ Week + day_of_week + `Source Country` + 
+                      `Destination Country` + season, 
+                    data = trainData, 
+                    method = "class")
+
+# Wizualizacja drzewa
+install.packages("rpart.plot")
+library(rpart.plot)
+rpart.plot(tree_model)
+
+
+
+###############       Ocena modeli      ################
+
+
+# Predykcje
+predictions <- predict(logistic_model, newdata = testData, type = "response")
+predicted_classes <- ifelse(predictions > 0.5, 1, 0)
+
+# Macierz pomyłek
+confusionMatrix(factor(predicted_classes), factor(testData$completeness))
+
+
+
+# Predykcje
+tree_predictions <- predict(tree_model, newdata = testData, type = "class")
+
+# Macierz pomyłek
+confusionMatrix(tree_predictions, factor(testData$completeness))
+
+# Wnioski - Wybieram Regresja logistyczną, ponieważ zależy mi na  maksymalnej dokładności klasyfikacji i precyzyjnym identyfikowaniu niekompletnych zamówień.
+# Regresja logistyczna radzi sobie lepiej w Dokładności, Specyficzności, PPV
+# Drzewa decyzyjne - radzą sobie lepiej w Czułości, Kappa, i Zrównoważonej dokładności. 
+
+
+###############      Dostosowanie progu decyzyjnego     ################
+
+
+# 1. Obliczenie prawdopodobieństwa na zbiorze testowym
+predicted_probs <- predict(logistic_model, newdata = testData, type = "response")
+
+# 2. Zastosowanie nowego progu decyzyjnego (p = 0.7)
+threshold <- 0.7
+predicted_classes <- ifelse(predicted_probs > threshold, 1, 0)
+
+# 3. Ocena modelu z nowym progiem decyzyjnym
+# Macierz pomyłek
+confusion <- confusionMatrix(factor(predicted_classes), factor(testData$completeness))
+
+# Wyniki
+print("Confusion Matrix with adjusted threshold (p = 0.7):")
+print(confusion)
+
+# 4. Wizualizacja rozkładu prawdopodobieństw
+Threshhold <- 0.6
+ggplot(testData, aes(x = predicted_probs, fill = factor(completeness))) +
+  geom_histogram(binwidth = 0.05, alpha = 0.7, position = "identity") +
+  labs(title = "Rozkład prawdopodobieństw z progiem decyzyjnym (0.7)",
+       x = "Prawdopodobieństwo kompletności", 
+       fill = "Kompletność") +
+  geom_vline(xintercept = threshold, color = "red", linetype = "dashed", size = 1) +
+  theme_minimal()
+
+
+# Poprawianie kodu: Próg 0.7 jest za wysoki, co skutkuje w tym, że obniża czułość. Obniżamy próg do 0.6 aby zobaczyc jakie nastąpią zmiany:
+
+threshold <- 0.6
+predicted_classes <- ifelse(predicted_probs > threshold, 1, 0)
+confusion <- confusionMatrix(factor(predicted_classes), factor(testData$completeness))
+print(confusion)
+
+
+# 1. Rozdzielenie danych na klasy
+class_0 <- trainData[trainData$completeness == 0, ]
+class_1 <- trainData[trainData$completeness == 1, ]
+
+# 2. Oversampling klasy 0
+oversampled_class_0 <- class_0[sample(nrow(class_0), nrow(class_1), replace = TRUE), ]
+
+# 3. Połączenie danych
+balanced_train_data <- rbind(oversampled_class_0, class_1)
+
+# Sprawdzenie rozkładu klas po oversamplingu
+table(balanced_train_data$completeness)
+
+# 4. Trening modelu na zbalansowanych danych
+# Zbiór pokazuje wartości N/A co może wynikać z dzielenia przez zero. Identyfikujemy te wartści i zamieniamy je na wartości stałe:
+
+subset(balanced_train_data, is.infinite(fill_rate))
+balanced_train_data <- balanced_train_data[!is.infinite(balanced_train_data$fill_rate), ]
+balanced_train_data$fill_rate[is.infinite(balanced_train_data$fill_rate)] <- 0
+sapply(balanced_train_data, function(x) sum(is.infinite(x)))
+
+
+balanced_model <- glm(completeness ~ fill_rate + season + day_of_week + `Source Country` + `Destination Country`, 
+                      data = balanced_train_data, 
+                      family = "binomial")
+
+# 5. Predykcja na zbiorze testowym
+balanced_predictions <- predict(balanced_model, newdata = testData, type = "response")
+
+# 6. Zastosowanie progu decyzyjnego (0.6)
+threshold <- 0.6
+balanced_predicted_classes <- ifelse(balanced_predictions > threshold, 1, 0)
+
+# 7. Ocena modelu
+library(caret)
+balanced_confusion <- confusionMatrix(factor(balanced_predicted_classes), factor(testData$completeness))
+
+# Wyświetlenie wyników
+print("Confusion Matrix with oversampling and threshold 0.6:")
+print(balanced_confusion)
+
+# Wnioski - Model osiągnął perfekcyjną klasyfikację na danych testowych. Dokładność wyniosła 100%, Czułość i speczyficzność 100%, i Kappa - 1. 
+
+# Walidacja krzyżowa
+
+library(caret)
+train_control <- trainControl(method = "cv", number = 10)
+cv_model <- train(completeness ~ fill_rate + season + day_of_week + `Source Country` + `Destination Country`, 
+                  data = balanced_train_data, 
+                  method = "glm", 
+                  family = "binomial", 
+                  trControl = train_control)
+print(cv_model)
+
+
+# Jako ostatni krok przed testowaniem modelu na nowych danych, przeprowadźmy analizę ważności zniemmych:
+
+# Wyciągnięcie współczynników z modelu
+coefficients <- coef(summary(logistic_model))
+
+# Współćzynniki jako ramka danych 
+coefficients_df <- as.data.frame(coefficients)
+
+# Dodanie zmiennej z nazwami zmiennych 
+coefficients_df$Variable <- rownames(coefficients_df)
+rownames(coefficients_df) <- NULL  # Usunięcie nazw wierszy
+
+# Zmiana nazw kolumn na bardziej czytelne
+colnames(coefficients_df) <- c("Estimate", "Std_Error", "Z_value", "P_value", "Variable")
+
+# Wyniki w tabeli
+print("Współczynniki regresji logistycznej:")
+print(coefficients_df)
+
+# Wizualizacja 
+ggplot(coefficients_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity", fill = "violet") +
+  coord_flip() +
+  labs(title = "Ważność zmiennych w regresji logistycznej",
+       x = "Zmienna", y = "Współczynnik") +
+  theme_minimal()
+
+# Jeżeli zdecydujemy się na usunięcie zmiennych week, która tylko pokazuje nam tydzień roku, kryterium AIC zmniejszy się z 4392,64 do 4390,98.
+# Zwiększa to dokładność modelu, i tą wlasnie zmienną zdecydowałem się wyeliminować z modelu. Kraje początkowe i docelowe są kluczowe dla przewidywania kompletności zamówień,
+# Jak i poszczególne dni tygodnia(środa , niedziela). Pomimo tego, że Kraje docelowe FR i NL mają wysokie p-value i nie mają wysokiego wpływu, to w celu prognozowania, 
+# Postanosiono je zachować
+
+
+library(MASS)
+reduced_model <- stepAIC(logistic_model, direction = "both")
+summary(reduced_model)
+summary(Fill_rate_dashboard_2)
+colnames(Fill_rate_dashboard_2)
+summary(Fill_rate_dashboard_2)
+colnames(Fill_rate_dashboard_2)
+
+
+# Wykres zmiennych modelu:
+
+# Wyciągnięcie współczynników z reduced_model
+coefficients_reduced <- coef(summary(reduced_model))
+
+# Przekształcenie współczynników w ramkę danych
+coefficients_reduced_df <- as.data.frame(coefficients_reduced)
+
+# Dodanie nazw zmiennych jako kolumny
+coefficients_reduced_df$Variable <- rownames(coefficients_reduced_df)
+rownames(coefficients_reduced_df) <- NULL  # Usunięcie wierszy jako nazw
+
+# Zmiana nazw kolumn na bardziej czytelne
+colnames(coefficients_reduced_df) <- c("Estimate", "Std_Error", "Z_value", "P_value", "Variable")
+
+# Wizualizacja wpływu zmiennych
+library(ggplot2)
+ggplot(coefficients_reduced_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity", fill = "turquoise") +
+  coord_flip() +
+  labs(title = "Ważność zmiennych po redukcji w regresji logistycznej",
+       x = "Zmienna", y = "Współczynnik (Estimate)") +
+  theme_minimal()
+
+
+
+
+
+
+
 
