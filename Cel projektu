@@ -1,1 +1,41 @@
+Projekt: Modelowanie i prognozowanie kompletności zamówień logistycznych
 
+Opis projektu:
+Projekt dotyczy budowy modelu przewidującego kompletność zamówień w logistyce na podstawie danych dotyczących zamówień, takich jak kraj początkowy i docelowy, tydzień roku, dzień tygodnia, 
+sezon, a także fill rate (stosunek wagi zamówienia do maksymalnej ładowności ciężarówki). Głównym celem jest poprawa efektywności operacyjnej i optymalizacja ładunków.
+Modelowanie zostało przeprowadzone w oparciu o regresję logistyczną, z dodatkową analizą drzewa decyzyjnego. Projekt uwzględnia optymalizację danych poprzez balansowanie klas (oversampling) oraz redukcję zmiennych, aby poprawić jakość prognozowania.
+
+Zastosowanie projektu:
+Optymalizacja załadunków
+Przewidywanie kompletności zamówień umożliwia lepsze zarządzanie ładunkami i wykorzystaniem pojazdów transportowych.
+Wsparcie decyzyjne
+Automatyczna klasyfikacja zamówień jako kompletne lub niekompletne pozwala działom logistyki skupić się na zamówieniach wymagających korekty.
+Prognozowanie przyszłych zamówień
+Szacowanie prawdopodobieństwa kompletności zamówień na podstawie danych historycznych i bieżących.
+Zarządzanie dostawami
+Identyfikacja problematycznych tras, dni tygodnia lub regionów geograficznych.
+Poprawa wydajności
+Redukcja kosztów operacyjnych dzięki lepszemu planowaniu transportu.
+
+Licencja projektu:
+Projekt jest udostępniony na licencji MIT co zezwala na:
+Używanie kodu w projektach komercyjnych i niekomercyjnych.
+Modyfikowanie kodu i rozpowszechnianie zmodyfikowanej wersji.
+Korzystanie z projektu bez ograniczeń, z zastrzeżeniem zachowania informacji o autorach i licencji.
+Zastrzeżenie: Autor nie ponoszą odpowiedzialności za jakiekolwiek straty wynikające z użytkowania projektu.
+Wymagania techniczne:
+Projekt został opracowany w języku R.
+
+Oprogramowanie:
+R w wersji 4.3 lub wyższej.
+RStudio (opcjonalnie) dla łatwiejszej obsługi interfejsu.
+
+Dane wejściowe:
+
+Plik Excel zawierający informacje o zamówieniach, w tym kolumny:
+Weight (waga zamówienia)
+Weight_Capacity (maksymalna ładowność ciężarówki)
+Planned Departure Date (data wyjazdu)
+Source Country (kraj początkowy)
+Destination Country (kraj docelowy).
+Pakiety R( Zawarte w Kodzie)
